@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}SmartForce Expense Tracker{% endblock %}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    body { background: #0d1117; }
+    .navbar-brand { font-weight: 700; letter-spacing: 0.5px; }
+    .card { border: 1px solid #30363d; background: #161b22; }
+    .table { --bs-table-bg: transparent; }
+    .badge-high { background-color: #198754; }
+    .badge-medium { background-color: #ffc107; color: #000; }
+    .badge-low { background-color: #dc3545; }
+    .category-pill { font-size: 0.75rem; }
+    .stat-card { border-left: 3px solid #0d6efd; }
+    .personal-row { opacity: 0.45; }
+  </style>
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark border-bottom border-secondary mb-4">
+  <div class="container-fluid">
+    <a class="navbar-brand text-primary" href="/dashboard">
+      <i class="bi bi-receipt-cutoff me-2"></i>SmartForce Expenses
+    </a>
+    <div class="collapse navbar-collapse">
+      <ul class="navbar-nav me-auto">
+        <li class="nav-item"><a class="nav-link {% if request.url.path == '/dashboard' %}active{% endif %}" href="/dashboard"><i class="bi bi-speedometer2 me-1"></i>Dashboard</a></li>
+        <li class="nav-item"><a class="nav-link {% if '/upload' in request.url.path %}active{% endif %}" href="/upload"><i class="bi bi-upload me-1"></i>Upload</a></li>
+        <li class="nav-item"><a class="nav-link {% if '/transactions' in request.url.path %}active{% endif %}" href="/transactions"><i class="bi bi-list-ul me-1"></i>Transactions</a></li>
+        <li class="nav-item"><a class="nav-link {% if '/mileage' in request.url.path %}active{% endif %}" href="/mileage"><i class="bi bi-car-front me-1"></i>Mileage</a></li>
+        <li class="nav-item"><a class="nav-link {% if '/reports' in request.url.path %}active{% endif %}" href="/reports"><i class="bi bi-file-earmark-spreadsheet me-1"></i>Reports</a></li>
+      </ul>
+      <span class="text-muted small"><i class="bi bi-shield-lock me-1"></i>100% local — no data leaves this machine</span>
+    </div>
+  </div>
+</nav>
+<div class="container-fluid px-4">
+  {% block content %}{% endblock %}
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

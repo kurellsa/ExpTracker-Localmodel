@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Mileage Log{% endblock %}
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-car-front me-2"></i>Mileage Log — {{ year }}</h2>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card stat-card p-3 text-center">
+      <div class="text-muted small">Total Miles</div>
+      <div class="fs-3 fw-bold">{{ "%.1f"|format(total_miles) }}</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3 text-center" style="border-left:3px solid #198754;">
+      <div class="text-muted small">Standard Rate</div>
+      <div class="fs-3 fw-bold">${{ rate }}/mi</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3 text-center" style="border-left:3px solid #0dcaf0;">
+      <div class="text-muted small">Total Deduction</div>
+      <div class="fs-3 fw-bold text-success">${{ "%.2f"|format(total_deduction) }}</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3 text-center" style="border-left:3px solid #6f42c1;">
+      <div class="text-muted small">Est. Tax Saved</div>
+      <div class="fs-3 fw-bold" style="color:#a78bfa">${{ "%.0f"|format(total_deduction * 0.295) }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-5">
+    <div class="card p-4">
+      <h5 class="mb-3"><i class="bi bi-plus-circle me-2"></i>Log a Trip</h5>
+      <form method="post" action="/mileage/add">
+        <input type="hidden" name="year" value="{{ year }}">
+        <div class="mb-3">
+          <label class="form-label">Date</label>
+          <input type="date" name="trip_date" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">From</label>
+          <input type="text" name="from_location" class="form-control" placeholder="e.g. Home office, Atlanta GA" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">To</label>
+          <input type="text" name="to_location" class="form-control" placeholder="e.g. Client site, Alpharetta GA" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Miles</label>
+          <input type="number" name="miles" class="form-control" step="0.1" min="0.1" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Business Purpose</label>
+          <input type="text" name="purpose" class="form-control" placeholder="e.g. Client meeting, vendor pickup" required>
+        </div>
+        <button type="submit" class="btn btn-primary w-100">Add Trip</button>
+      </form>
+    </div>
+  </div>
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0">
+          <thead class="table-dark">
+            <tr>
+              <th>Date</th><th>From → To</th><th>Miles</th><th class="text-end">Deduction</th><th>Purpose</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for log in logs %}
+            <tr>
+              <td class="text-muted small">{{ log.date }}</td>
+              <td class="small">{{ log.from_location }} → {{ log.to_location }}</td>
+              <td>{{ log.miles }}</td>
+              <td class="text-end text-success">${{ "%.2f"|format(log.miles * rate) }}</td>
+              <td class="small text-muted">{{ log.purpose[:40] }}{% if log.purpose|length > 40 %}…{% endif %}</td>
+              <td>
+                <form method="post" action="/mileage/{{ log.id }}/delete">
+                  <input type="hidden" name="year" value="{{ year }}">
+                  <button class="btn btn-xs btn-outline-danger p-1" onclick="return confirm('Delete?')"><i class="bi bi-trash"></i></button>
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="text-center text-muted py-4">No trips logged yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="mt-2 small text-muted">
+      <i class="bi bi-info-circle me-1"></i>IRS standard mileage rate for 2025: <strong>$0.70/mile</strong> (2024: $0.67/mile).
+      Round trips count separately — log each direction.
+    </div>
+  </div>
+</div>
+{% endblock %}

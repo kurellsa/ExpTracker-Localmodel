@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Upload CSVs{% endblock %}
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-upload me-2"></i>Upload Bank CSVs</h2>
+
+{% if not ollama_ok %}
+<div class="alert alert-danger">
+  <i class="bi bi-x-circle me-2"></i><strong>Ollama not detected.</strong>
+  Make sure Ollama is running: <code>ollama serve</code> in a terminal,
+  and the model is pulled: <code>ollama pull qwen2.5:14b</code>
+</div>
+{% else %}
+<div class="alert alert-success">
+  <i class="bi bi-check-circle me-2"></i>Ollama connected — <strong>qwen2.5:14b</strong> ready for local categorization.
+</div>
+{% endif %}
+
+{% if stats %}
+<div class="alert alert-info mb-4">
+  <h6><i class="bi bi-info-circle me-1"></i>Upload Results</h6>
+  <ul class="mb-1">
+    {% for f in stats.files %}
+    <li><strong>{{ f.name }}</strong>: {{ f.status }}</li>
+    {% endfor %}
+  </ul>
+  <div class="mt-2 fw-semibold">
+    Total imported: {{ stats.imported }} &nbsp;|&nbsp;
+    Duplicates skipped: {{ stats.skipped_duplicate }} &nbsp;|&nbsp;
+    Errors: {{ stats.errors }}
+  </div>
+  {% if stats.imported > 0 %}
+  <a href="/transactions?approved=pending" class="btn btn-warning btn-sm mt-2">
+    <i class="bi bi-check2-circle me-1"></i>Review categorized transactions →
+  </a>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <div class="card p-4">
+      <h5 class="mb-3">Upload CSV Files</h5>
+      <form method="post" enctype="multipart/form-data">
+        <div class="mb-3">
+          <label class="form-label">Bank CSV Files <span class="text-muted">(select multiple)</span></label>
+          <input type="file" name="files" class="form-control" multiple accept=".csv" required>
+          <div class="form-text">Supported: Chase, Bank of America, Capital One, Wells Fargo, Amex, Generic</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Tax Year</label>
+          <select name="tax_year" class="form-select">
+            <option value="2025" selected>2025</option>
+            <option value="2024">2024</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Account Label <span class="text-muted">(optional)</span></label>
+          <input type="text" name="account_label" class="form-control" placeholder="e.g. Chase Business Checking">
+        </div>
+        <button type="submit" class="btn btn-primary" {% if not ollama_ok %}disabled{% endif %}>
+          <i class="bi bi-cpu me-1"></i>Upload & Categorize with AI
+        </button>
+      </form>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card p-4">
+      <h5 class="mb-3"><i class="bi bi-info-circle me-2"></i>How It Works</h5>
+      <ol class="text-muted small lx-4">
+        <li class="mb-2">Select one or more CSV files exported from your bank(s).</li>
+        <li class="mb-2">The app auto-detects the bank format and parses every transaction.</li>
+        <li class="mb-2">Each transaction is sent to <strong>qwen2.5:14b running locally</strong> — your data never leaves this machine.</li>
+        <li class="mb-2">The AI assigns a Schedule C category with a confidence level.</li>
+        <li class="mb-2">You review and approve (or correct) the categories on the Transactions page.</li>
+        <li>The Reports page shows your final Schedule C totals, ready for your CPA.</li>
+      </ol>
+      <hr>
+      <div class="small text-muted">
+        <strong>Meals</strong> are automatically flagged — the 50% deductibility cap is applied in Reports.<br>
+        <strong>Duplicates</strong> are detected by date + description + amount and skipped.
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
