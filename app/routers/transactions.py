@@ -20,10 +20,21 @@ def transactions_page(
     category: str = "",
     approved: str = "",
     search: str = "",
+    account: str = "",
     page: int = 1,
 ):
     db = SessionLocal()
     try:
+        # Distinct accounts for the filter dropdown
+        account_rows = (
+            db.query(Transaction.account)
+            .filter(Transaction.tax_year == year, Transaction.account != "", Transaction.account.isnot(None))
+            .distinct()
+            .order_by(Transaction.account)
+            .all()
+        )
+        accounts = [r[0] for r in account_rows]
+
         q = db.query(Transaction).filter(Transaction.tax_year == year)
         if category:
             q = q.filter(Transaction.category == category)
@@ -33,6 +44,8 @@ def transactions_page(
             q = q.filter(Transaction.is_approved == True)  # noqa: E712
         if search:
             q = q.filter(Transaction.description.ilike(f"%{search}%"))
+        if account:
+            q = q.filter(Transaction.account == account)
 
         total = q.count()
         per_page = 50
@@ -44,9 +57,11 @@ def transactions_page(
                 "request": request,
                 "transactions": txns,
                 "categories": SCHEDULE_C_CATEGORIES,
+                "accounts": accounts,
                 "year": year,
                 "filter_category": category,
                 "filter_approved": approved,
+                "filter_account": account,
                 "search": search,
                 "page": page,
                 "total": total,
@@ -126,6 +141,7 @@ def delete_filtered(
     category: str = Form(""),
     approved: str = Form(""),
     search: str = Form(""),
+    account: str = Form(""),
 ):
     db = SessionLocal()
     try:
@@ -138,6 +154,8 @@ def delete_filtered(
             q = q.filter(Transaction.is_approved == True)  # noqa: E712
         if search:
             q = q.filter(Transaction.description.ilike(f"%{search}%"))
+        if account:
+            q = q.filter(Transaction.account == account)
         q.delete(synchronize_session=False)
         db.commit()
     finally:

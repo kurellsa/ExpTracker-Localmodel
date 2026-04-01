@@ -6,7 +6,7 @@ import os
 from app.database import SessionLocal
 from app.models import Transaction
 from app.services.csv_parser import parse_csv
-from app.services.categorizer import categorize_transaction, check_ollama
+from app.services.categorizer import categorize_batch, check_ollama
 
 router = APIRouter()
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -39,10 +39,10 @@ async def handle_upload(
                 stats["files"].append({"name": file.filename, "status": f"Parse error: {e}"})
                 continue
 
-            imported = 0
+            # Dedup first, then batch-categorize only the new rows
+            new_rows = []
             dupes = 0
             for row in rows:
-                # Dedup: same date + description + amount + bank
                 exists = (
                     db.query(Transaction)
                     .filter(
@@ -56,11 +56,14 @@ async def handle_upload(
                 )
                 if exists:
                     dupes += 1
-                    continue
+                else:
+                    new_rows.append(row)
 
-                # LLM categorize
-                cat_result = categorize_transaction(row["description"], row["amount"])
+            # Parallel LLM categorization
+            categorized = categorize_batch(new_rows) if new_rows else []
 
+            imported = 0
+            for row, cat_result in zip(new_rows, categorized):
                 txn = Transaction(
                     date=row["date"],
                     description=row["description"],

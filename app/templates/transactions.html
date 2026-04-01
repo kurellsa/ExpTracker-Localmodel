@@ -21,6 +21,14 @@
     </select>
   </div>
   <div class="col-md-2">
+    <select name="account" class="form-select form-select-sm">
+      <option value="">All Accounts</option>
+      {% for acct in accounts %}
+      <option value="{{ acct }}" {% if acct == filter_account %}selected{% endif %}>{{ acct }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-2">
     <select name="approved" class="form-select form-select-sm">
       <option value="">All</option>
       <option value="pending" {% if filter_approved == 'pending' %}selected{% endif %}>Needs Review</option>
@@ -31,22 +39,23 @@
     <button type="submit" class="btn btn-sm btn-outline-primary">Filter</button>
     <a href="/transactions?year={{ year }}" class="btn btn-sm btn-outline-secondary ms-1">Clear</a>
   </div>
-  <div class="col-auto ms-auto d-flex gap-1">
-    <form method="post" action="/transactions/delete-filtered" class="d-inline" id="deleteFilteredForm">
-      <input type="hidden" name="year" value="{{ year }}">
-      <input type="hidden" name="category" value="{{ filter_category }}">
-      <input type="hidden" name="approved" value="{{ filter_approved }}">
-      <input type="hidden" name="search" value="{{ search }}">
-      <button type="button" class="btn btn-sm btn-outline-danger" onclick="confirmDeleteFiltered()">
-        <i class="bi bi-trash me-1"></i>Delete All Filtered ({{ total }})
-      </button>
-    </form>
-    <form method="post" action="/transactions/approve-all" class="d-inline">
-      <input type="hidden" name="year" value="{{ year }}">
-      <button class="btn btn-sm btn-success"><i class="bi bi-check2-all me-1"></i>Approve All High-Confidence</button>
-    </form>
-  </div>
 </form>
+<div class="d-flex justify-content-end gap-1 mb-2">
+  <form method="post" action="/transactions/delete-filtered" class="d-inline" id="deleteFilteredForm">
+    <input type="hidden" name="year" value="{{ year }}">
+    <input type="hidden" name="category" value="{{ filter_category }}">
+    <input type="hidden" name="account" value="{{ filter_account }}">
+    <input type="hidden" name="approved" value="{{ filter_approved }}">
+    <input type="hidden" name="search" value="{{ search }}">
+    <button type="button" class="btn btn-sm btn-outline-danger" onclick="confirmDeleteFiltered()">
+      <i class="bi bi-trash me-1"></i>Delete All Filtered ({{ total }})
+    </button>
+  </form>
+  <form method="post" action="/transactions/approve-all" class="d-inline">
+    <input type="hidden" name="year" value="{{ year }}">
+    <button class="btn btn-sm btn-success"><i class="bi bi-check2-all me-1"></i>Approve All High-Confidence</button>
+  </form>
+</div>
 
 <!-- Bulk selection actions (hidden until checkboxes selected) -->
 <div id="bulkBar" class="alert alert-warning d-none d-flex align-items-center justify-content-between py-2 mb-2">
@@ -65,6 +74,7 @@
           <th>Date</th>
           <th>Description</th>
           <th class="text-end">Amount</th>
+          <th>Account</th>
           <th>Category</th>
           <th>Confidence</th>
           <th>Status</th>
@@ -80,6 +90,7 @@
             <span title="{{ t.llm_reasoning }}">{{ t.description[:60] }}{% if t.description|length > 60 %}…{% endif %}</span>
           </td>
           <td class="text-end fw-semibold">${{ "%.2f"|format(t.amount) }}</td>
+          <td class="text-muted small">{{ t.account or '' }}</td>
           <td>
             <form method="post" action="/transactions/{{ t.id }}/update" class="d-flex gap-1 align-items-center">
               <input type="hidden" name="year" value="{{ year }}">
@@ -121,7 +132,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="8" class="text-center text-muted py-4">No transactions found.</td></tr>
+        <tr><td colspan="9" class="text-center text-muted py-4">No transactions found.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -134,7 +145,7 @@
   <ul class="pagination pagination-sm justify-content-center">
     {% for p in range(1, total_pages + 1) %}
     <li class="page-item {% if p == page %}active{% endif %}">
-      <a class="page-link" href="?year={{ year }}&category={{ filter_category }}&approved={{ filter_approved }}&search={{ search }}&page={{ p }}">{{ p }}</a>
+      <a class="page-link" href="?year={{ year }}&category={{ filter_category }}&account={{ filter_account }}&approved={{ filter_approved }}&search={{ search }}&page={{ p }}">{{ p }}</a>
     </li>
     {% endfor %}
   </ul>
