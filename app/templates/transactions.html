@@ -117,11 +117,10 @@
             {% endif %}
           </td>
           <td>
-              <div class="d-flex gap-1">
+              <div class="d-flex gap-1 flex-nowrap">
                 <button type="submit" name="is_personal" value="off" class="btn btn-xs btn-outline-success p-1" title="Approve">
                   <i class="bi bi-check-lg"></i>
                 </button>
-              </div>
             </form>
             <form method="post" action="/transactions/{{ t.id }}/delete" class="d-inline">
               <input type="hidden" name="year" value="{{ year }}">
@@ -129,6 +128,7 @@
                 <i class="bi bi-trash"></i>
               </button>
             </form>
+              </div>
           </td>
         </tr>
         {% else %}

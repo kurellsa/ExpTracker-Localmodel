@@ -48,7 +48,7 @@ def transactions_page(
             q = q.filter(Transaction.account == account)
 
         total = q.count()
-        per_page = 50
+        per_page = 100
         txns = q.order_by(Transaction.date.desc()).offset((page - 1) * per_page).limit(per_page).all()
 
         return templates.TemplateResponse(
