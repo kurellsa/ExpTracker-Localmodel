@@ -59,7 +59,7 @@ async def handle_upload(
                 else:
                     new_rows.append(row)
 
-            # Parallel LLM categorization
+            # LangGraph multi-agent categorization with vendor dedup
             categorized = categorize_batch(new_rows) if new_rows else []
 
             imported = 0
@@ -73,10 +73,10 @@ async def handle_upload(
                     tax_year=tax_year,
                     category=cat_result["category"],
                     is_personal=(cat_result["category"] == "PERSONAL (excluded)"),
-                    is_approved=False,
-                    llm_category=cat_result["category"],
-                    llm_confidence=cat_result.get("confidence", "low"),
-                    llm_reasoning=cat_result.get("reasoning", ""),
+                    is_approved=cat_result.get("is_approved", False),
+                    llm_category=cat_result.get("llm_category", cat_result["category"]),
+                    llm_confidence=cat_result.get("llm_confidence", cat_result.get("confidence", "low")),
+                    llm_reasoning=cat_result.get("llm_reasoning", cat_result.get("reasoning", "")),
                 )
                 db.add(txn)
                 imported += 1

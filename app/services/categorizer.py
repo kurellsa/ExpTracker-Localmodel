@@ -1,112 +1,67 @@
 """
-Local LLM categorizer using Ollama.
-Categorizes transactions into IRS Schedule C line items.
+Transaction categorizer — thin wrapper over the multi-agent LangGraph pipeline.
+
+The real work happens in app.services.agents.graph:
+  classify (Llama 3.2:3b via Ollama) → review (DeBERTa zero-shot) → resolve
+
+This module preserves the original public API so routers don't need to change:
+  - categorize_transaction(description, amount) -> dict
+  - categorize_batch(transactions) -> list[dict]
+  - check_ollama() -> bool
 """
-import os
-import json
-import time
+from __future__ import annotations
+
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import re
+import time
 
 import ollama
-from app.models import SCHEDULE_C_CATEGORIES
 
-MODEL = os.getenv("CATEGORIZER_MODEL", "qwen2.5:7b")
-MAX_WORKERS = int(os.getenv("CATEGORIZER_WORKERS", "4"))
+from app.services.agents.classifier_agent import CLASSIFIER_MODEL
+from app.services.agents.graph import run_categorization
+
+# Kept for backward compatibility with any import that references MODEL.
+MODEL = CLASSIFIER_MODEL
 
 logger = logging.getLogger(__name__)
-
-_SYSTEM_PROMPT = """You are a US CPA specializing in S-Corporation tax returns.
-Your job is to categorize business transactions into IRS Schedule C categories.
-Always respond with valid JSON only — no explanation, no markdown fences."""
-
-_CATEGORIES_LIST = "\n".join(f"- {c}" for c in SCHEDULE_C_CATEGORIES)
 
 
 def categorize_transaction(description: str, amount: float) -> dict:
     """
-    Returns: {category, confidence, reasoning}
-    confidence: "high" | "medium" | "low"
+    Run the multi-agent categorization graph on a single transaction.
+
+    Returns:
+      {
+        category, confidence, reasoning, is_approved,
+        llm_category, llm_confidence, llm_reasoning,
+      }
     """
-    prompt = f"""Categorize this S-Corp business transaction into exactly one Schedule C category.
-
-Available categories:
-{_CATEGORIES_LIST}
-
-Transaction:
-  Description: {description}
-  Amount: ${amount:.2f}
-
-Rules:
-- Restaurant/food/dining/DoorDash/UberEats → "Meals (50% deductible)"
-- Gas stations for business vehicle → "Car & Truck (Actual)"
-- Laptops, computers, phones >$2,500 → "Depreciation / Section 179"
-- Office supplies, small equipment → "Supplies"
-- Software subscriptions → "Office Expense"
-- If clearly personal (grocery store, gym, clothing) → "PERSONAL (excluded)"
-- Uncertain → use "Other Business Expense" with low confidence
-
-Respond with JSON only:
-{{"category": "<exact category name>", "confidence": "high|medium|low", "reasoning": "<one sentence>"}}"""
-
-    t0 = time.perf_counter()
-    try:
-        response = ollama.chat(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            options={"temperature": 0.1},
-        )
-        elapsed = time.perf_counter() - t0
-        raw = response["message"]["content"].strip()
-
-        # Strip markdown fences if model adds them
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-
-        result = json.loads(raw.strip())
-
-        # Validate category is in our list
-        if result.get("category") not in SCHEDULE_C_CATEGORIES:
-            result["category"] = "Other Business Expense"
-            result["confidence"] = "low"
-
-        logger.info("categorized | %.2fs | %s | %s | conf=%s",
-                    elapsed, result["category"], description[:60], result.get("confidence"))
-        return result
-
-    except Exception as e:
-        elapsed = time.perf_counter() - t0
-        logger.warning("categorize_error | %.2fs | %s | %s", elapsed, description[:60], e)
-        return {
-            "category": "Other Business Expense",
-            "confidence": "low",
-            "reasoning": f"LLM error: {e}",
-        }
+    return run_categorization(description, amount)
 
 
 def _normalize_vendor(description: str) -> str:
-    """Normalize vendor name for cache lookup — strip trailing digits, whitespace, location suffixes."""
-    import re
+    """Normalize vendor name for dedup — strip trailing digits, whitespace, location suffixes."""
     name = description.strip().upper()
-    # Remove trailing location info like "ATLANTA GA", "CAROLINA PR", city/state patterns
-    name = re.sub(r'\s+[A-Z]{2}\s*$', '', name)
+    # Remove trailing location info like "ATLANTA GA", "CAROLINA PR"
+    name = re.sub(r"\s+[A-Z]{2}\s*$", "", name)
     # Remove trailing numbers (store IDs, transaction refs)
-    name = re.sub(r'[\s#*\-]+[\dA-Z]*$', '', name)
+    name = re.sub(r"[\s#*\-]+[\dA-Z]*$", "", name)
     return name.strip()
 
 
 def categorize_batch(transactions: list[dict]) -> list[dict]:
-    """Categorize a list of {description, amount} dicts in parallel, with vendor dedup for consistency."""
-    results = [None] * len(transactions)
+    """
+    Categorize a list of {description, amount} dicts via the LangGraph pipeline.
 
-    # Step 1: Group by normalized vendor — only categorize one per unique vendor
+    Vendor dedup: transactions with the same normalized vendor name are
+    categorized once and the result is reused, ensuring consistency and
+    cutting LLM calls.
+    """
+    results: list[dict | None] = [None] * len(transactions)
+
+    # Group by normalized vendor — only categorize one representative per vendor.
     vendor_groups: dict[str, list[int]] = {}
-    vendor_representative: dict[str, int] = {}  # vendor_key -> first index
+    vendor_representative: dict[str, int] = {}
     for i, txn in enumerate(transactions):
         vendor_key = _normalize_vendor(txn["description"])
         if vendor_key not in vendor_groups:
@@ -116,36 +71,34 @@ def categorize_batch(transactions: list[dict]) -> list[dict]:
 
     unique_indices = list(vendor_representative.values())
 
-    # Step 2: Parallel LLM calls for unique vendors only
     t0 = time.perf_counter()
     vendor_results: dict[str, dict] = {}
-    if unique_indices:
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            futures = {
-                executor.submit(categorize_transaction, transactions[i]["description"], transactions[i]["amount"]): i
-                for i in unique_indices
-            }
-            for future in as_completed(futures):
-                i = futures[future]
-                cat_result = future.result()
-                vendor_key = _normalize_vendor(transactions[i]["description"])
-                vendor_results[vendor_key] = cat_result
+    for i in unique_indices:
+        cat_result = categorize_transaction(
+            transactions[i]["description"], transactions[i]["amount"]
+        )
+        vendor_key = _normalize_vendor(transactions[i]["description"])
+        vendor_results[vendor_key] = cat_result
 
-    # Step 3: Spread results to all transactions with the same vendor
     for vendor_key, indices in vendor_groups.items():
         cat_result = vendor_results[vendor_key]
         for i in indices:
             results[i] = {**transactions[i], **cat_result}
 
     elapsed = time.perf_counter() - t0
-    cache_hits = len(transactions) - len(unique_indices)
-    logger.info("batch_complete | %.2fs | %d txns | %d LLM calls | %d vendor dedup",
-                elapsed, len(transactions), len(unique_indices), cache_hits)
+    dedup_hits = len(transactions) - len(unique_indices)
+    logger.info(
+        "batch_complete | %.2fs | %d txns | %d graph runs | %d vendor dedup",
+        elapsed,
+        len(transactions),
+        len(unique_indices),
+        dedup_hits,
+    )
     return results
 
 
 def check_ollama() -> bool:
-    """Return True if Ollama is running and model is available."""
+    """Return True if Ollama is running and the classifier model is available."""
     try:
         models = ollama.list()
         names = [m.model for m in models.models]

@@ -6,7 +6,7 @@ from fastapi.templating import Jinja2Templates
 import os
 
 from app.database import SessionLocal
-from app.models import Transaction, SCHEDULE_C_CATEGORIES
+from app.models import Transaction, Category, get_all_categories
 
 router = APIRouter()
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -25,15 +25,14 @@ def transactions_page(
 ):
     db = SessionLocal()
     try:
-        # Distinct accounts for the filter dropdown
-        account_rows = (
-            db.query(Transaction.account)
-            .filter(Transaction.tax_year == year, Transaction.account != "", Transaction.account.isnot(None))
+        # Get distinct account labels for the filter dropdown
+        accounts = [
+            row[0] for row in db.query(Transaction.account)
+            .filter(Transaction.tax_year == year, Transaction.account.isnot(None), Transaction.account != "")
             .distinct()
             .order_by(Transaction.account)
             .all()
-        )
-        accounts = [r[0] for r in account_rows]
+        ]
 
         q = db.query(Transaction).filter(Transaction.tax_year == year)
         if category:
@@ -56,7 +55,7 @@ def transactions_page(
             {
                 "request": request,
                 "transactions": txns,
-                "categories": SCHEDULE_C_CATEGORIES,
+                "categories": get_all_categories(db),
                 "accounts": accounts,
                 "year": year,
                 "filter_category": category,
@@ -71,6 +70,25 @@ def transactions_page(
         )
     finally:
         db.close()
+
+
+@router.post("/categories")
+def add_category(name: str = Form(...), year: int = Form(2025)):
+    """Create a new custom category. Idempotent on case-insensitive duplicates."""
+    name = name.strip()[:100]
+    if not name:
+        return RedirectResponse(url=f"/transactions?year={year}", status_code=303)
+    db = SessionLocal()
+    try:
+        existing = (
+            db.query(Category).filter(Category.name.ilike(name)).first()
+        )
+        if existing is None:
+            db.add(Category(name=name))
+            db.commit()
+    finally:
+        db.close()
+    return RedirectResponse(url=f"/transactions?year={year}", status_code=303)
 
 
 @router.post("/transactions/{txn_id}/approve")

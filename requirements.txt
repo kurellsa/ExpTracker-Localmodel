@@ -7,3 +7,8 @@ aiofiles==24.1.0
 ollama==0.4.4
 pandas==2.2.3
 openpyxl==3.1.5
+langgraph>=1.0.0
+langsmith>=0.2.0
+transformers>=4.46.0
+torch>=2.5.0
+python-dotenv>=1.0.1

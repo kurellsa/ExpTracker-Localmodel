@@ -1,27 +1,74 @@
 from sqlalchemy import Column, Integer, String, Float, Date, Boolean, Text, DateTime
 from sqlalchemy.sql import func
-from app.database import Base
+from sqlalchemy.orm import Session
+from app.database import Base, SessionLocal
 
 
 SCHEDULE_C_CATEGORIES = [
+    # Vehicle / Travel
     "Car & Truck (Actual)",
+    "Travel",
+    # Capital / Equipment
     "Depreciation / Section 179",
+    # Operating expenses
     "Insurance",
     "Legal & Professional",
     "Office Expense",
     "Rent",
     "Supplies",
-    "Travel",
-    "Meals (50% deductible)",
+    "Telephone / Cell Phone",
     "Utilities",
+    "Shipping & Freight / Postage",
+    "Bank Charges & Fees",
+    "Dues & Subscriptions",
+    "Interest Expense",
+    # People
+    "Officer Compensation",
+    "Salaries & Wages (non-shareholder)",
     "Contract Labor / Wages",
+    "Subcontractors / Outside Services",
+    "Payroll Taxes (Employer)",
+    "Employee Benefits / Health Insurance",
+    "Retirement (SEP / 401k Employer)",
+    # Sales / COGS
+    "Cost of Goods Sold",
     "Advertising & Marketing",
+    # Meals
+    "Meals (50% deductible)",
+    # Catch-all
     "Other Business Expense",
     "PERSONAL (excluded)",
 ]
 
 MEALS_CATEGORY = "Meals (50% deductible)"
 MEALS_DEDUCTIBLE_PCT = 0.50
+
+
+class Category(Base):
+    __tablename__ = "categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False, unique=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+def get_all_categories(db: Session | None = None) -> list[str]:
+    """Return all category names ordered by id (defaults first, then user-added).
+
+    If no session is passed, opens its own. Falls back to the seed constant
+    if the table is empty (e.g., tests / before init_db has run).
+    """
+    own_session = False
+    if db is None:
+        db = SessionLocal()
+        own_session = True
+    try:
+        rows = db.query(Category.name).order_by(Category.id).all()
+        names = [r[0] for r in rows]
+        return names if names else list(SCHEDULE_C_CATEGORIES)
+    finally:
+        if own_session:
+            db.close()
 
 
 class Transaction(Base):

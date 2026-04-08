@@ -7,7 +7,7 @@ from sqlalchemy import func
 import os
 
 from app.database import SessionLocal
-from app.models import Transaction, MileageLog, SCHEDULE_C_CATEGORIES, MEALS_CATEGORY, MEALS_DEDUCTIBLE_PCT
+from app.models import Transaction, MileageLog, get_all_categories, MEALS_CATEGORY, MEALS_DEDUCTIBLE_PCT
 
 router = APIRouter()
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -73,7 +73,7 @@ def reports_page(request: Request, year: int = 2025):
                 "request": request,
                 "year": year,
                 "schedule_c": schedule_c,
-                "categories": SCHEDULE_C_CATEGORIES,
+                "categories": get_all_categories(db),
                 "pending_review": pending,
             },
         )
@@ -94,7 +94,7 @@ def export_csv(year: int = 2025):
         writer.writerow([])
         writer.writerow(["IRS Schedule C Category", "Gross Amount", "Deductible Amount", "# Transactions", "Notes"])
 
-        for cat in SCHEDULE_C_CATEGORIES:
+        for cat in get_all_categories(db):
             if cat == "PERSONAL (excluded)":
                 continue
             data = schedule_c["by_category"].get(cat, {"gross": 0, "deductible": 0, "count": 0})
