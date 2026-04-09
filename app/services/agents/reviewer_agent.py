@@ -17,6 +17,11 @@ import os
 from functools import lru_cache
 from typing import Any
 
+# Air-gapped: prevent transformers/huggingface_hub from making any network calls.
+# Must be set before transformers is imported.
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
 from app.models import get_all_categories
 
 logger = logging.getLogger(__name__)

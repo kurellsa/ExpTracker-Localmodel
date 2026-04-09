@@ -24,7 +24,24 @@ def get_db():
 def init_db():
     from app.models import Transaction, MileageLog, Category  # noqa: F401
     Base.metadata.create_all(bind=engine)
+    _migrate_schema()
     seed_categories()
+
+
+def _migrate_schema():
+    """SQLite-safe column additions for existing DBs."""
+    with engine.begin() as conn:
+        cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(transactions)")}
+        # Drop-and-ignore for is_income left over from the previous iteration.
+        # SQLite can't DROP COLUMN on older versions; leaving it in place is harmless.
+        if "account_type" not in cols:
+            conn.exec_driver_sql(
+                "ALTER TABLE transactions ADD COLUMN account_type VARCHAR(20) NOT NULL DEFAULT 'debit'"
+            )
+        if "is_inflow" not in cols:
+            conn.exec_driver_sql(
+                "ALTER TABLE transactions ADD COLUMN is_inflow BOOLEAN NOT NULL DEFAULT 0"
+            )
 
 
 def seed_categories():

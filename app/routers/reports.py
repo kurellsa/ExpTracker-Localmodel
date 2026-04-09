@@ -1,5 +1,6 @@
 import csv
 import io
+from datetime import date
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from fastapi.templating import Jinja2Templates
@@ -16,18 +17,38 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 STANDARD_RATES = {2024: 0.67, 2025: 0.70}
 
 
-def _build_schedule_c(db, year: int) -> dict:
-    rows = (
-        db.query(Transaction.category, func.sum(Transaction.amount), func.count(Transaction.id))
-        .filter(
-            Transaction.tax_year == year,
-            Transaction.is_personal == False,  # noqa: E712
-            Transaction.category.isnot(None),
-            Transaction.category != "PERSONAL (excluded)",
-        )
-        .group_by(Transaction.category)
-        .all()
+def _parse_date(s: str | None):
+    if not s:
+        return None
+    try:
+        return date.fromisoformat(s)
+    except ValueError:
+        return None
+
+
+def _build_schedule_c(
+    db,
+    year: int,
+    account: str | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> dict:
+    txn_q = db.query(
+        Transaction.category, func.sum(Transaction.amount), func.count(Transaction.id)
+    ).filter(
+        Transaction.tax_year == year,
+        Transaction.is_personal == False,  # noqa: E712
+        Transaction.category.isnot(None),
+        Transaction.category != "PERSONAL (excluded)",
+        Transaction.category != "Credit Card Payment (transfer)",
     )
+    if account:
+        txn_q = txn_q.filter(Transaction.account == account)
+    if start_date:
+        txn_q = txn_q.filter(Transaction.date >= start_date)
+    if end_date:
+        txn_q = txn_q.filter(Transaction.date <= end_date)
+    rows = txn_q.group_by(Transaction.category).all()
 
     by_category = {}
     for cat, total, count in rows:
@@ -38,9 +59,16 @@ def _build_schedule_c(db, year: int) -> dict:
             deductible = gross
         by_category[cat] = {"gross": gross, "deductible": deductible, "count": count}
 
-    # Mileage
-    mileage_rows = db.query(MileageLog).filter(MileageLog.tax_year == year).all()
-    total_miles = sum(r.miles for r in mileage_rows)
+    # Mileage — excluded when filtering by account (mileage isn't account-scoped)
+    if account:
+        total_miles = 0.0
+    else:
+        mileage_q = db.query(MileageLog).filter(MileageLog.tax_year == year)
+        if start_date:
+            mileage_q = mileage_q.filter(MileageLog.date >= start_date)
+        if end_date:
+            mileage_q = mileage_q.filter(MileageLog.date <= end_date)
+        total_miles = sum(r.miles for r in mileage_q.all())
     rate = STANDARD_RATES.get(year, 0.70)
     mileage_deduction = round(total_miles * rate, 2)
 
@@ -56,16 +84,38 @@ def _build_schedule_c(db, year: int) -> dict:
 
 
 @router.get("/reports")
-def reports_page(request: Request, year: int = 2025):
+def reports_page(
+    request: Request,
+    year: int = 2025,
+    account: str = "",
+    start_date: str = "",
+    end_date: str = "",
+):
     db = SessionLocal()
     try:
-        schedule_c = _build_schedule_c(db, year)
+        sd = _parse_date(start_date)
+        ed = _parse_date(end_date)
+        schedule_c = _build_schedule_c(db, year, account or None, sd, ed)
 
-        pending = (
-            db.query(func.count(Transaction.id))
-            .filter(Transaction.tax_year == year, Transaction.is_approved == False)  # noqa: E712
-            .scalar()
+        accounts = [
+            row[0] for row in db.query(Transaction.account)
+            .filter(Transaction.tax_year == year, Transaction.account.isnot(None), Transaction.account != "")
+            .distinct()
+            .order_by(Transaction.account)
+            .all()
+        ]
+
+        pending_q = db.query(func.count(Transaction.id)).filter(
+            Transaction.tax_year == year,
+            Transaction.is_approved == False,  # noqa: E712
         )
+        if account:
+            pending_q = pending_q.filter(Transaction.account == account)
+        if sd:
+            pending_q = pending_q.filter(Transaction.date >= sd)
+        if ed:
+            pending_q = pending_q.filter(Transaction.date <= ed)
+        pending = pending_q.scalar()
 
         return templates.TemplateResponse(
             "reports.html",
@@ -75,6 +125,10 @@ def reports_page(request: Request, year: int = 2025):
                 "schedule_c": schedule_c,
                 "categories": get_all_categories(db),
                 "pending_review": pending,
+                "accounts": accounts,
+                "filter_account": account,
+                "filter_start_date": start_date,
+                "filter_end_date": end_date,
             },
         )
     finally:
@@ -82,10 +136,12 @@ def reports_page(request: Request, year: int = 2025):
 
 
 @router.get("/reports/export")
-def export_csv(year: int = 2025):
+def export_csv(year: int = 2025, account: str = "", start_date: str = "", end_date: str = ""):
     db = SessionLocal()
     try:
-        schedule_c = _build_schedule_c(db, year)
+        sd = _parse_date(start_date)
+        ed = _parse_date(end_date)
+        schedule_c = _build_schedule_c(db, year, account or None, sd, ed)
 
         output = io.StringIO()
         writer = csv.writer(output)
@@ -95,7 +151,7 @@ def export_csv(year: int = 2025):
         writer.writerow(["IRS Schedule C Category", "Gross Amount", "Deductible Amount", "# Transactions", "Notes"])
 
         for cat in get_all_categories(db):
-            if cat == "PERSONAL (excluded)":
+            if cat in ("PERSONAL (excluded)", "Credit Card Payment (transfer)"):
                 continue
             data = schedule_c["by_category"].get(cat, {"gross": 0, "deductible": 0, "count": 0})
             note = "50% cap applied" if cat == MEALS_CATEGORY else ""
@@ -123,15 +179,23 @@ def export_csv(year: int = 2025):
 
 
 @router.get("/reports/export/transactions")
-def export_all_transactions(year: int = 2025):
+def export_all_transactions(year: int = 2025, account: str = "", start_date: str = "", end_date: str = ""):
     db = SessionLocal()
     try:
-        txns = (
-            db.query(Transaction)
-            .filter(Transaction.tax_year == year, Transaction.is_personal == False)  # noqa: E712
-            .order_by(Transaction.date)
-            .all()
+        sd = _parse_date(start_date)
+        ed = _parse_date(end_date)
+        q = db.query(Transaction).filter(
+            Transaction.tax_year == year,
+            Transaction.is_personal == False,  # noqa: E712
+            Transaction.category != "Credit Card Payment (transfer)",
         )
+        if account:
+            q = q.filter(Transaction.account == account)
+        if sd:
+            q = q.filter(Transaction.date >= sd)
+        if ed:
+            q = q.filter(Transaction.date <= ed)
+        txns = q.order_by(Transaction.date).all()
 
         output = io.StringIO()
         writer = csv.writer(output)

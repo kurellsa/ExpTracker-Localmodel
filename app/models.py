@@ -38,6 +38,7 @@ SCHEDULE_C_CATEGORIES = [
     # Catch-all
     "Other Business Expense",
     "PERSONAL (excluded)",
+    "Credit Card Payment (transfer)",
 ]
 
 MEALS_CATEGORY = "Meals (50% deductible)"
@@ -77,9 +78,11 @@ class Transaction(Base):
     id = Column(Integer, primary_key=True, index=True)
     date = Column(Date, nullable=False)
     description = Column(String(500), nullable=False)
-    amount = Column(Float, nullable=False)          # positive = expense
+    amount = Column(Float, nullable=False)          # always stored positive
     bank = Column(String(100), nullable=True)
     account = Column(String(100), nullable=True)
+    account_type = Column(String(20), nullable=False, default="debit")  # "debit" or "credit"
+    is_inflow = Column(Boolean, default=False, nullable=False)  # raw direction: True = money came in (refund/deposit)
     tax_year = Column(Integer, nullable=False, default=2025)
 
     # Categorization

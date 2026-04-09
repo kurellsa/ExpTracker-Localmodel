@@ -54,6 +54,14 @@
           </select>
         </div>
         <div class="mb-3">
+          <label class="form-label">Account Type</label>
+          <select name="account_type" class="form-select">
+            <option value="debit" selected>Debit / Checking</option>
+            <option value="credit">Credit Card</option>
+          </select>
+          <div class="form-text">Credit card charges will be displayed as -$ (money out), refunds as +$ (green), and card payments as transfers (yellow, excluded from Schedule C).</div>
+        </div>
+        <div class="mb-3">
           <label class="form-label">Account Label <span class="text-muted">(optional)</span></label>
           <input type="text" name="account_label" class="form-control" placeholder="e.g. Chase Business Checking">
         </div>

@@ -13,6 +13,16 @@ BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 
+_SORT_COLUMNS = {
+    "date": Transaction.date,
+    "description": Transaction.description,
+    "amount": Transaction.amount,
+    "account": Transaction.account,
+    "category": Transaction.category,
+    "status": Transaction.is_approved,
+}
+
+
 @router.get("/transactions")
 def transactions_page(
     request: Request,
@@ -21,6 +31,8 @@ def transactions_page(
     approved: str = "",
     search: str = "",
     account: str = "",
+    sort: str = "date",
+    dir: str = "desc",
     page: int = 1,
 ):
     db = SessionLocal()
@@ -46,9 +58,15 @@ def transactions_page(
         if account:
             q = q.filter(Transaction.account == account)
 
+        # Sorting
+        sort_key = sort if sort in _SORT_COLUMNS else "date"
+        sort_dir = "asc" if dir == "asc" else "desc"
+        col = _SORT_COLUMNS[sort_key]
+        order = col.asc() if sort_dir == "asc" else col.desc()
+
         total = q.count()
         per_page = 100
-        txns = q.order_by(Transaction.date.desc()).offset((page - 1) * per_page).limit(per_page).all()
+        txns = q.order_by(order, Transaction.id.desc()).offset((page - 1) * per_page).limit(per_page).all()
 
         return templates.TemplateResponse(
             "transactions.html",
@@ -62,6 +80,8 @@ def transactions_page(
                 "filter_approved": approved,
                 "filter_account": account,
                 "search": search,
+                "sort": sort_key,
+                "dir": sort_dir,
                 "page": page,
                 "total": total,
                 "per_page": per_page,

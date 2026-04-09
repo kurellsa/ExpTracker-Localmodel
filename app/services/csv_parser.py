@@ -24,10 +24,12 @@ def _detect_bank(text: str, filename: str) -> str:
 
     if "chase" in fname or ("transaction date" in header and "post date" in header and "category" in header):
         return "Chase"
-    if "bank of america" in fname or "bankofamerica" in fname or "bofa" in fname:
+    if "bank of america" in fname or "bankofamerica" in fname or "bofa" in fname or "boa" in fname:
         return "Bank of America"
     if "capital one" in fname or "capitalone" in fname:
         return "Capital One"
+    if "citi" in fname:
+        return "Citi"
     if "wells fargo" in fname or "wellsfargo" in fname:
         return "Wells Fargo"
     if "amex" in fname or "american express" in fname:
@@ -57,17 +59,19 @@ def _to_expense(amount_str: str) -> float | None:
 # ── Chase ──────────────────────────────────────────────────────────────────────
 # Columns: Transaction Date, Post Date, Description, Category, Type, Amount, Memo
 def _parse_chase(text: str) -> list[dict]:
+    # Chase: negative = debit/expense, positive = credit/payment/refund
     rows = []
     reader = csv.DictReader(io.StringIO(text))
     for row in reader:
         try:
             amount_raw = float(row.get("Amount", "0").replace(",", ""))
-            if amount_raw >= 0:
-                continue  # skip credits / payments
+            if amount_raw == 0:
+                continue
             rows.append({
                 "date": _parse_date(row["Transaction Date"]),
                 "description": row.get("Description", "").strip(),
                 "amount": round(abs(amount_raw), 2),
+                "is_inflow": amount_raw > 0,
                 "account": row.get("Type", ""),
             })
         except (KeyError, ValueError):
@@ -78,17 +82,25 @@ def _parse_chase(text: str) -> list[dict]:
 # ── Bank of America ────────────────────────────────────────────────────────────
 # Columns: Date, Description, Amount, Running Bal.
 def _parse_bofa(text: str) -> list[dict]:
+    # BoA: negative = debit/expense, positive = credit/deposit
     rows = []
     reader = csv.DictReader(io.StringIO(text))
     for row in reader:
         try:
-            amount_raw = float(row.get("Amount", "0").replace(",", ""))
-            if amount_raw >= 0:
+            amount_str = (
+                row.get("Amount")
+                or row.get("Summary Amt.")
+                or row.get("Summary Amt")
+                or "0"
+            )
+            amount_raw = float(amount_str.replace("$", "").replace(",", "").strip())
+            if amount_raw == 0:
                 continue
             rows.append({
                 "date": _parse_date(row["Date"]),
                 "description": row.get("Description", "").strip(),
                 "amount": round(abs(amount_raw), 2),
+                "is_inflow": amount_raw > 0,
                 "account": "",
             })
         except (KeyError, ValueError):
@@ -98,18 +110,33 @@ def _parse_bofa(text: str) -> list[dict]:
 
 # ── Capital One ────────────────────────────────────────────────────────────────
 # Columns: Transaction Date, Posted Date, Card No., Description, Category, Debit, Credit
-def _parse_capital_one(text: str) -> list[dict]:
+def _parse_debit_credit_columns(text: str) -> list[dict]:
+    """Shared parser for Capital One / Citi-style CSVs with separate Debit and
+    Credit columns. Credit = refund/payment received (inflow).
+
+    Handles a credit amount written as a negative number (e.g. Citi "-674.97")
+    by taking absolute value — the column itself already tells us the direction.
+    """
     rows = []
     reader = csv.DictReader(io.StringIO(text))
     for row in reader:
         try:
-            debit = row.get("Debit", "").strip()
-            if not debit:
+            debit = (row.get("Debit") or "").strip()
+            credit = (row.get("Credit") or "").strip()
+            if debit:
+                amt = round(abs(float(debit.replace(",", ""))), 2)
+                is_inflow = False
+            elif credit:
+                amt = round(abs(float(credit.replace(",", ""))), 2)
+                is_inflow = True
+            else:
                 continue
+            date_str = row.get("Transaction Date") or row.get("Date") or ""
             rows.append({
-                "date": _parse_date(row["Transaction Date"]),
+                "date": _parse_date(date_str),
                 "description": row.get("Description", "").strip(),
-                "amount": round(float(debit.replace(",", "")), 2),
+                "amount": amt,
+                "is_inflow": is_inflow,
                 "account": row.get("Card No.", ""),
             })
         except (KeyError, ValueError):
@@ -120,6 +147,7 @@ def _parse_capital_one(text: str) -> list[dict]:
 # ── Wells Fargo ────────────────────────────────────────────────────────────────
 # No header row: Date, Amount, *, *, Description
 def _parse_wells_fargo(text: str) -> list[dict]:
+    # WF: negative = debit/expense, positive = credit/deposit
     rows = []
     reader = csv.reader(io.StringIO(text))
     for row in reader:
@@ -127,12 +155,13 @@ def _parse_wells_fargo(text: str) -> list[dict]:
             continue
         try:
             amount_raw = float(row[1].replace(",", ""))
-            if amount_raw >= 0:
+            if amount_raw == 0:
                 continue
             rows.append({
                 "date": _parse_date(row[0]),
                 "description": row[4].strip(),
                 "amount": round(abs(amount_raw), 2),
+                "is_inflow": amount_raw > 0,
                 "account": "",
             })
         except (IndexError, ValueError):
@@ -143,17 +172,19 @@ def _parse_wells_fargo(text: str) -> list[dict]:
 # ── American Express ───────────────────────────────────────────────────────────
 # Columns: Date, Description, Amount
 def _parse_amex(text: str) -> list[dict]:
+    # Amex: positive = charge/expense, negative = payment/credit
     rows = []
     reader = csv.DictReader(io.StringIO(text))
     for row in reader:
         try:
             amount_raw = float(row.get("Amount", "0").replace(",", ""))
-            if amount_raw <= 0:
-                continue  # Amex: positive = charge
+            if amount_raw == 0:
+                continue
             rows.append({
                 "date": _parse_date(row["Date"]),
                 "description": row.get("Description", "").strip(),
-                "amount": round(amount_raw, 2),
+                "amount": round(abs(amount_raw), 2),
+                "is_inflow": amount_raw < 0,
                 "account": "",
             })
         except (KeyError, ValueError):
@@ -170,7 +201,7 @@ def _parse_generic(text: str) -> list[dict]:
 
     date_col = next((headers[i] for i, h in enumerate(headers_lower) if "date" in h), None)
     desc_col = next((headers[i] for i, h in enumerate(headers_lower) if "desc" in h or "memo" in h or "narr" in h), None)
-    amount_col = next((headers[i] for i, h in enumerate(headers_lower) if "amount" in h or "debit" in h), None)
+    amount_col = next((headers[i] for i, h in enumerate(headers_lower) if "amount" in h or "debit" in h or "amt" in h), None)
 
     if not all([date_col, desc_col, amount_col]):
         return rows
@@ -185,6 +216,7 @@ def _parse_generic(text: str) -> list[dict]:
                 "date": _parse_date(row[date_col]),
                 "description": row.get(desc_col, "").strip(),
                 "amount": round(abs(val), 2),
+                "is_inflow": val > 0,
                 "account": "",
             })
         except (KeyError, ValueError):
@@ -195,7 +227,8 @@ def _parse_generic(text: str) -> list[dict]:
 _PARSERS = {
     "Chase": _parse_chase,
     "Bank of America": _parse_bofa,
-    "Capital One": _parse_capital_one,
+    "Capital One": _parse_debit_credit_columns,
+    "Citi": _parse_debit_credit_columns,
     "Wells Fargo": _parse_wells_fargo,
     "American Express": _parse_amex,
     "Generic": _parse_generic,

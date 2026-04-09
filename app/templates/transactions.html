@@ -35,6 +35,8 @@
       <option value="approved" {% if filter_approved == 'approved' %}selected{% endif %}>Approved</option>
     </select>
   </div>
+  <input type="hidden" name="sort" value="{{ sort }}">
+  <input type="hidden" name="dir" value="{{ dir }}">
   <div class="col-auto">
     <button type="submit" class="btn btn-sm btn-outline-primary">Filter</button>
     <a href="/transactions?year={{ year }}" class="btn btn-sm btn-outline-secondary ms-1">Clear</a>
@@ -71,16 +73,22 @@
 <div class="card">
   <div class="table-responsive">
     <table class="table table-hover table-sm mb-0">
+      {% macro sort_link(col, label, align='') -%}
+        {%- set next_dir = 'asc' if (sort == col and dir == 'desc') else ('desc' if sort == col else 'asc') -%}
+        {%- set arrow = ' ▲' if (sort == col and dir == 'asc') else (' ▼' if sort == col else '') -%}
+        <a class="text-white text-decoration-none {{ align }}"
+           href="?year={{ year }}&category={{ filter_category }}&account={{ filter_account }}&approved={{ filter_approved }}&search={{ search }}&sort={{ col }}&dir={{ next_dir }}">{{ label }}{{ arrow }}</a>
+      {%- endmacro %}
       <thead class="table-dark">
         <tr>
           <th><input type="checkbox" id="selectAll" onclick="toggleAll(this)"></th>
-          <th>Date</th>
-          <th>Description</th>
-          <th class="text-end">Amount</th>
-          <th>Account</th>
-          <th>Category</th>
+          <th>{{ sort_link('date', 'Date') }}</th>
+          <th>{{ sort_link('description', 'Description') }}</th>
+          <th class="text-end">{{ sort_link('amount', 'Amount') }}</th>
+          <th>{{ sort_link('account', 'Account') }}</th>
+          <th>{{ sort_link('category', 'Category') }}</th>
           <th>Confidence</th>
-          <th>Status</th>
+          <th>{{ sort_link('status', 'Status') }}</th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -92,7 +100,22 @@
           <td>
             <span title="{{ t.llm_reasoning }}">{{ t.description[:60] }}{% if t.description|length > 60 %}…{% endif %}</span>
           </td>
-          <td class="text-end fw-semibold">${{ "%.2f"|format(t.amount) }}</td>
+          {# Display rules:
+             - debit accounts: show amount as-is (positive $).
+             - credit accounts: charges → -$X (normal), refunds → +$X (green),
+               card payments (transfer category) → $X (yellow).
+          #}
+          {% if t.account_type == 'credit' %}
+            {% if t.category == 'Credit Card Payment (transfer)' %}
+              <td class="text-end fw-semibold text-warning">${{ "%.2f"|format(t.amount) }}</td>
+            {% elif t.is_inflow %}
+              <td class="text-end fw-semibold text-success">+${{ "%.2f"|format(t.amount) }}</td>
+            {% else %}
+              <td class="text-end fw-semibold">-${{ "%.2f"|format(t.amount) }}</td>
+            {% endif %}
+          {% else %}
+            <td class="text-end fw-semibold">${{ "%.2f"|format(t.amount) }}</td>
+          {% endif %}
           <td class="text-muted small">{{ t.account or '' }}</td>
           <td>
             <form method="post" action="/transactions/{{ t.id }}/update" class="d-flex gap-1 align-items-center">
@@ -153,7 +176,7 @@
   <ul class="pagination pagination-sm justify-content-center">
     {% for p in range(1, total_pages + 1) %}
     <li class="page-item {% if p == page %}active{% endif %}">
-      <a class="page-link" href="?year={{ year }}&category={{ filter_category }}&account={{ filter_account }}&approved={{ filter_approved }}&search={{ search }}&page={{ p }}">{{ p }}</a>
+      <a class="page-link" href="?year={{ year }}&category={{ filter_category }}&account={{ filter_account }}&approved={{ filter_approved }}&search={{ search }}&sort={{ sort }}&dir={{ dir }}&page={{ p }}">{{ p }}</a>
     </li>
     {% endfor %}
   </ul>

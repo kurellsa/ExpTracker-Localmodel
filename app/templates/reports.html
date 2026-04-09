@@ -1,13 +1,53 @@
 {% extends "base.html" %}
 {% block title %}Schedule C Report — {{ year }}{% endblock %}
 {% block content %}
+{% set qs = "year=" ~ year %}
+{% if filter_account %}{% set qs = qs ~ "&account=" ~ filter_account|urlencode %}{% endif %}
+{% if filter_start_date %}{% set qs = qs ~ "&start_date=" ~ filter_start_date %}{% endif %}
+{% if filter_end_date %}{% set qs = qs ~ "&end_date=" ~ filter_end_date %}{% endif %}
+
 <div class="d-flex align-items-center justify-content-between mb-4">
   <h2 class="mb-0"><i class="bi bi-file-earmark-spreadsheet me-2"></i>Schedule C Report — {{ year }}</h2>
   <div class="d-flex gap-2">
-    <a href="/reports/export" class="btn btn-success btn-sm"><i class="bi bi-download me-1"></i>Export Summary CSV</a>
-    <a href="/reports/export/transactions" class="btn btn-outline-secondary btn-sm"><i class="bi bi-download me-1"></i>Export All Transactions</a>
+    <a href="/reports/export?{{ qs }}" class="btn btn-success btn-sm"><i class="bi bi-download me-1"></i>Export Summary CSV</a>
+    <a href="/reports/export/transactions?{{ qs }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-download me-1"></i>Export All Transactions</a>
   </div>
 </div>
+
+<form method="get" action="/reports" class="card p-3 mb-4">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-2">
+      <label class="form-label small text-muted mb-1">Tax Year</label>
+      <input type="number" name="year" value="{{ year }}" class="form-control form-control-sm">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small text-muted mb-1">Account</label>
+      <select name="account" class="form-select form-select-sm">
+        <option value="">All accounts</option>
+        {% for a in accounts %}
+        <option value="{{ a }}" {% if a == filter_account %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small text-muted mb-1">Start Date</label>
+      <input type="date" name="start_date" value="{{ filter_start_date }}" class="form-control form-control-sm">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small text-muted mb-1">End Date</label>
+      <input type="date" name="end_date" value="{{ filter_end_date }}" class="form-control form-control-sm">
+    </div>
+    <div class="col-md-1 d-flex gap-1">
+      <button type="submit" class="btn btn-primary btn-sm w-100">Apply</button>
+    </div>
+  </div>
+  {% if filter_account or filter_start_date or filter_end_date %}
+  <div class="mt-2">
+    <a href="/reports?year={{ year }}" class="small text-muted">Clear filters</a>
+    {% if filter_account %}<span class="badge bg-secondary ms-2">Mileage excluded when filtering by account</span>{% endif %}
+  </div>
+  {% endif %}
+</form>
 
 {% if pending_review > 0 %}
 <div class="alert alert-warning">

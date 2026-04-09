@@ -55,6 +55,7 @@ def dashboard(request: Request):
                 Transaction.tax_year == year,
                 Transaction.is_personal == False,  # noqa: E712
                 Transaction.category.isnot(None),
+                Transaction.category != "Credit Card Payment (transfer)",
             )
             .group_by(Transaction.category)
             .all()
