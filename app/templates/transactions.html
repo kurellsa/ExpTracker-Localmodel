@@ -100,32 +100,23 @@
           <td>
             <span title="{{ t.llm_reasoning }}">{{ t.description[:60] }}{% if t.description|length > 60 %}…{% endif %}</span>
           </td>
-          {# Display rules:
-             - debit accounts: show amount as-is (positive $).
-             - credit accounts: charges → -$X (normal), refunds → +$X (green),
-               card payments (transfer category) → $X (yellow).
-          #}
-          {% if t.account_type == 'credit' %}
-            {% if t.category == 'Credit Card Payment (transfer)' %}
-              <td class="text-end fw-semibold text-warning">${{ "%.2f"|format(t.amount) }}</td>
-            {% elif t.is_inflow %}
-              <td class="text-end fw-semibold text-success">+${{ "%.2f"|format(t.amount) }}</td>
-            {% else %}
-              <td class="text-end fw-semibold">-${{ "%.2f"|format(t.amount) }}</td>
-            {% endif %}
+          {% if t.category == 'Credit Card Payment (transfer)' %}
+            <td class="text-end fw-semibold text-warning">${{ "%.2f"|format(t.amount) }}</td>
+          {% elif t.is_inflow %}
+            <td class="text-end fw-semibold text-success">+${{ "%.2f"|format(t.amount) }}</td>
           {% else %}
             <td class="text-end fw-semibold">${{ "%.2f"|format(t.amount) }}</td>
           {% endif %}
           <td class="text-muted small">{{ t.account or '' }}</td>
           <td>
-            <form method="post" action="/transactions/{{ t.id }}/update" class="d-flex gap-1 align-items-center">
-              <input type="hidden" name="year" value="{{ year }}">
-              <select name="category" class="form-select form-select-sm" style="min-width:180px;" onchange="this.form.submit()">
+            <div class="d-flex gap-1 align-items-center">
+              <select id="cat-{{ t.id }}" class="form-select form-select-sm" style="min-width:180px;" data-original="{{ t.category }}" onchange="markDirty({{ t.id }})">
                 {% for cat in categories %}
                 <option value="{{ cat }}" {% if cat == t.category %}selected{% endif %}>{{ cat }}</option>
                 {% endfor %}
               </select>
-            </form>
+              <button type="button" id="save-{{ t.id }}" class="btn btn-sm btn-outline-primary d-none" onclick="saveTxn({{ t.id }})">Save</button>
+            </div>
           </td>
           <td>
             {% if t.llm_confidence == 'high' %}
@@ -145,14 +136,9 @@
           </td>
           <td>
             <div class="d-flex gap-1 flex-nowrap">
-              <form method="post" action="/transactions/{{ t.id }}/update" class="d-inline">
-                <input type="hidden" name="year" value="{{ year }}">
-                <input type="hidden" name="category" value="{{ t.category }}">
-                <input type="hidden" name="is_personal" value="off">
-                <button type="submit" class="btn btn-xs btn-outline-success p-1" title="Approve">
-                  <i class="bi bi-check-lg"></i>
-                </button>
-              </form>
+              <button type="button" id="approve-{{ t.id }}" class="btn btn-xs btn-outline-success p-1" title="Approve" onclick="approveTxn({{ t.id }})">
+                <i class="bi bi-check-lg"></i>
+              </button>
               <form method="post" action="/transactions/{{ t.id }}/delete" class="d-inline">
                 <input type="hidden" name="year" value="{{ year }}">
                 <button type="submit" class="btn btn-xs btn-outline-danger p-1" title="Delete" onclick="return confirm('Delete this transaction?')">
@@ -240,6 +226,78 @@ function confirmDeleteSelected() {
 function confirmDeleteFiltered() {
   if (!confirm('Delete all {{ total }} transactions matching the current filter? This cannot be undone.')) return;
   document.getElementById('deleteFilteredForm').submit();
+}
+
+function markDirty(id) {
+  const sel = document.getElementById('cat-' + id);
+  const btn = document.getElementById('save-' + id);
+  if (sel.value !== sel.dataset.original) {
+    btn.classList.remove('d-none');
+  } else {
+    btn.classList.add('d-none');
+  }
+}
+
+async function saveTxn(id) {
+  const sel = document.getElementById('cat-' + id);
+  const btn = document.getElementById('save-' + id);
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    const res = await fetch('/api/transactions/' + id, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({category: sel.value, approve: true})
+    });
+    if (!res.ok) throw new Error('Save failed');
+    const data = await res.json();
+    sel.dataset.original = data.category;
+    btn.classList.add('d-none');
+    const row = sel.closest('tr');
+    const statusBadge = row.querySelector('td:nth-child(8) .badge');
+    if (statusBadge && data.is_approved) {
+      statusBadge.className = 'badge bg-success';
+      statusBadge.textContent = 'Approved';
+    }
+    if (data.is_personal) {
+      row.classList.add('personal-row');
+    } else {
+      row.classList.remove('personal-row');
+    }
+  } catch (e) {
+    alert('Failed to save. Please try again.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save';
+  }
+}
+
+async function approveTxn(id) {
+  const sel = document.getElementById('cat-' + id);
+  const btn = document.getElementById('approve-' + id);
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/transactions/' + id, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({category: sel.value, approve: true})
+    });
+    if (!res.ok) throw new Error('Approve failed');
+    const data = await res.json();
+    sel.dataset.original = data.category;
+    const saveBtn = document.getElementById('save-' + id);
+    if (saveBtn) saveBtn.classList.add('d-none');
+    const row = sel.closest('tr');
+    const statusBadge = row.querySelector('td:nth-child(8) .badge');
+    if (statusBadge) {
+      statusBadge.className = 'badge bg-success';
+      statusBadge.textContent = 'Approved';
+    }
+  } catch (e) {
+    alert('Failed to approve. Please try again.');
+  } finally {
+    btn.disabled = false;
+  }
 }
 </script>
 {% endblock %}

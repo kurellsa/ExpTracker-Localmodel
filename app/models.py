@@ -64,9 +64,9 @@ def get_all_categories(db: Session | None = None) -> list[str]:
         db = SessionLocal()
         own_session = True
     try:
-        rows = db.query(Category.name).order_by(Category.id).all()
+        rows = db.query(Category.name).order_by(Category.name).all()
         names = [r[0] for r in rows]
-        return names if names else list(SCHEDULE_C_CATEGORIES)
+        return names if names else sorted(SCHEDULE_C_CATEGORIES)
     finally:
         if own_session:
             db.close()

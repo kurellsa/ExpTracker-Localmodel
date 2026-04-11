@@ -1,8 +1,9 @@
 from typing import List
 
 from fastapi import APIRouter, Request, Form
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 import os
 
 from app.database import SessionLocal
@@ -122,6 +123,33 @@ def approve(txn_id: int, year: int = Form(2025)):
     finally:
         db.close()
     return RedirectResponse(url=f"/transactions?year={year}&approved=pending", status_code=303)
+
+
+class TxnUpdate(BaseModel):
+    category: str
+    approve: bool = True
+
+
+@router.patch("/api/transactions/{txn_id}")
+def api_update_transaction(txn_id: int, body: TxnUpdate):
+    db = SessionLocal()
+    try:
+        txn = db.query(Transaction).get(txn_id)
+        if not txn:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        txn.category = body.category
+        txn.is_personal = body.category == "PERSONAL (excluded)"
+        if body.approve:
+            txn.is_approved = True
+        db.commit()
+        return JSONResponse({
+            "id": txn.id,
+            "category": txn.category,
+            "is_approved": txn.is_approved,
+            "is_personal": txn.is_personal,
+        })
+    finally:
+        db.close()
 
 
 @router.post("/transactions/{txn_id}/update")

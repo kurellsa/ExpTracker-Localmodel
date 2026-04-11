@@ -24,6 +24,8 @@ def _detect_bank(text: str, filename: str) -> str:
 
     if "chase" in fname or ("transaction date" in header and "post date" in header and "category" in header):
         return "Chase"
+    if "posting date" in header and "merchant category" in header and "expense category" in header:
+        return "US Bank"
     if "bank of america" in fname or "bankofamerica" in fname or "bofa" in fname or "boa" in fname:
         return "Bank of America"
     if "capital one" in fname or "capitalone" in fname:
@@ -192,6 +194,31 @@ def _parse_amex(text: str) -> list[dict]:
     return rows
 
 
+# ── US Bank ────────────────────────────────────────────────────────────────────
+# Columns: Account/Card Number, Posting Date, Description, Amount,
+#          Merchant Category, Expense Category
+# Sign convention: positive = charge/expense, negative = payment/refund
+def _parse_us_bank(text: str) -> list[dict]:
+    rows = []
+    reader = csv.DictReader(io.StringIO(text))
+    for row in reader:
+        try:
+            amount_str = (row.get("Amount") or "0").replace("$", "").replace(",", "").strip()
+            amount_raw = float(amount_str)
+            if amount_raw == 0:
+                continue
+            rows.append({
+                "date": _parse_date(row["Posting Date"]),
+                "description": row.get("Description", "").strip(),
+                "amount": round(abs(amount_raw), 2),
+                "is_inflow": amount_raw < 0,
+                "account": row.get("Account/Card Number", "").strip(),
+            })
+        except (KeyError, ValueError):
+            continue
+    return rows
+
+
 # ── Generic fallback ───────────────────────────────────────────────────────────
 def _parse_generic(text: str) -> list[dict]:
     rows = []
@@ -231,5 +258,6 @@ _PARSERS = {
     "Citi": _parse_debit_credit_columns,
     "Wells Fargo": _parse_wells_fargo,
     "American Express": _parse_amex,
+    "US Bank": _parse_us_bank,
     "Generic": _parse_generic,
 }

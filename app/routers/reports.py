@@ -184,11 +184,7 @@ def export_all_transactions(year: int = 2025, account: str = "", start_date: str
     try:
         sd = _parse_date(start_date)
         ed = _parse_date(end_date)
-        q = db.query(Transaction).filter(
-            Transaction.tax_year == year,
-            Transaction.is_personal == False,  # noqa: E712
-            Transaction.category != "Credit Card Payment (transfer)",
-        )
+        q = db.query(Transaction).filter(Transaction.tax_year == year)
         if account:
             q = q.filter(Transaction.account == account)
         if sd:
@@ -199,13 +195,19 @@ def export_all_transactions(year: int = 2025, account: str = "", start_date: str
 
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(["Date", "Description", "Amount", "Category", "Deductible Amount", "Bank", "Account", "Approved", "LLM Confidence"])
+        writer.writerow(["Date", "Description", "Amount", "Category", "Deductible Amount", "Bank", "Account", "Is Personal", "Approved", "LLM Confidence"])
 
         for t in txns:
-            deductible = round(t.amount * MEALS_DEDUCTIBLE_PCT, 2) if t.category == MEALS_CATEGORY else t.amount
+            if t.is_personal or t.category == "Credit Card Payment (transfer)":
+                deductible = 0.0
+            elif t.category == MEALS_CATEGORY:
+                deductible = round(t.amount * MEALS_DEDUCTIBLE_PCT, 2)
+            else:
+                deductible = t.amount
             writer.writerow([
                 t.date, t.description, f"${t.amount:.2f}", t.category,
                 f"${deductible:.2f}", t.bank, t.account,
+                "Yes" if t.is_personal else "No",
                 "Yes" if t.is_approved else "No", t.llm_confidence,
             ])
 
